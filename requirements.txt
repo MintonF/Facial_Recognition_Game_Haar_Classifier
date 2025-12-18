@@ -1,9 +1,11 @@
-Flask==3.0.2
-  Flask-Session==0.4.0
-  opencv-python==4.7.0.72
-  numpy==1.26.4
-  Pillow==9.5.0
-  # Ensure all these versions are compatible with Python 3.11
+    Flask==3.0.2
+    Flask-Session==0.4.0
+    opencv-python==4.7.0.72
+    numpy==1.26.4
+    Pillow==9.5.0
+    gunicorn==21.2.0  # Add gunicorn with a specific version
+
+
 
 
 
