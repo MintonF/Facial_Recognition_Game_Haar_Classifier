@@ -1,8 +1,13 @@
 Flask==3.0.2
-Flask-Session==0.4.0
-opencv-python==4.7.0.72
-numpy==1.26.4
-Pillow==9.5.0
+  Flask-Session==0.4.0
+  opencv-python==4.7.0.72
+  numpy==1.26.4
+  Pillow==9.5.0
+  # Ensure all these versions are compatible with Python 3.11
+
+
+
+
 
 
 
