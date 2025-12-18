@@ -1,11 +1,8 @@
-  version: '1.0'
-  build:
-    commands:
-      - pip install -r requirements.txt
-  runtime: python
-  runtimeVersion: "3.11"
-  start:
-    command: python AppV27AccuracyAndRemovalFalsePositivesV10Rev6.py
+version: 1.0
+runtime: docker
+
+
+
 
 
 
