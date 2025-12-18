@@ -3,7 +3,7 @@ build:
   commands:
     - pip install -r requirements.txt
 runtime: python
-runtimeVersion: "3.11"
+runtimeVersion: "3.9"  # Use supported runtime, e.g., 3.9
 start:
   command: python AppV27AccuracyAndRemovalFalsePositivesV10Rev6.py
 
