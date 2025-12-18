@@ -9,6 +9,10 @@ import os
 import secrets
 import uuid  # Import the uuid module
 import json  # Import the json module
+import sys  # ADD THIS LINE
+
+print("Python Version:")  # ADD THIS LINE
+print(sys.version)  # ADD THIS LINE
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(24)
@@ -821,4 +825,5 @@ def reset():
 
 
 if __name__ == '__main__':
+
     app.run(debug=True)
