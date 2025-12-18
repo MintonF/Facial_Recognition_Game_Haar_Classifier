@@ -1,5 +1,8 @@
-version: 1.0
-runtime: docker
+    version: 1.0
+    service:
+      port: 8000 # Make sure this matches the EXPOSE port in your Dockerfile
+
+
 
 
 
