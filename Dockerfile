@@ -1,25 +1,18 @@
-FROM python:3.11-slim-bookworm
+# Use an official Python runtime as a parent image
+FROM python:3.11-slim-buster
 
-    # Set the working directory
-    WORKDIR /app
+# Set the working directory in the container to /app
+WORKDIR /app
 
-    # Copy the requirements file
-    COPY requirements.txt .
+# Copy the current directory contents into the container at /app
+COPY . /app
 
-    # Install dependencies
-    RUN pip install --no-cache-dir -r requirements.txt
+# Install any needed packages specified in requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-    # Update package lists and install libgl1-mesa-glx and libglib2.0-0
-    RUN apt-get update && apt-get install -y libgl1-mesa-glx libglib2.0-0
+# Make port 8080 available to the world outside this container
+EXPOSE 8080
 
-    # Copy the application code
-    COPY . .
-
-    # Expose port 8000
-    EXPOSE 8000
-
-    # Replace 'app' with the actual name of your Flask app instance if it's different
-    CMD ["gunicorn", "--bind", "0.0.0.0:8000", "AppV27AccuracyAndRemovalFalsePositivesV10Rev6:app"]
-
-
+# Run the application
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "AppV27AccuracyAndRemovalFalsePositivesV6:app"]
 
