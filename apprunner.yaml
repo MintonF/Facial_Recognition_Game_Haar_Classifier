@@ -1,27 +1,26 @@
-version: 1.0
+version: "1.0"
 service:
-  name: facial-recognition-game-haar-classifier
-  runtime: python3.10 # This will be ignored
+  name: "facial-recognition-game-haar-classifier"
+  runtime: "python3.11"
   source:
-    type: codeRepository
+    type: "codeRepository"
     configuration:
-      repository: https://github.com/MintonF/Facial_Recognition_Game_Haar_Classifier
-      branch: main
+      repository: "https://github.com/MintonF/Facial_Recognition_Game_Haar_Classifier"
+      branch: "main"
       autoDeploymentsEnabled: true
-  # build and run are not required, if you're using a dockerfile in the root of the repository
-  # build:
-  #   commands:
-  #     - pip install -r requirements.txt
-  # run:
-  #   command: gunicorn --bind 0.0.0.0:$PORT --workers 3 AppV27AccuracyAndRemovalFalsePositivesV6:app
-  #   port: 5000
+  build:
+    commands:
+      - "pip install -r requirements.txt"
+  run:
+    command: "gunicorn --bind 0.0.0.0:$PORT --workers 3 AppV27AccuracyAndRemovalFalsePositivesV6:app"
+    port: 5000
   healthCheck:
-    path: /
-    protocol: HTTP
+    path: "/"
     interval: 5
     timeout: 5
     healthyThreshold: 2
     unhealthyThreshold: 5
+
 
 
 
