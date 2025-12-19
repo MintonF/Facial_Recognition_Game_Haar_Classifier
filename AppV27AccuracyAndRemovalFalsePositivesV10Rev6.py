@@ -1,20 +1,18 @@
 import cv2
 import numpy as np
-from flask import Flask, request, render_template, session, redirect, url_for
+from flask import Flask, request, render_template, session
 import logging
 from io import BytesIO
 import base64
 from PIL import Image
 import os
 import secrets
+import re
+import json
 import uuid  # Import the uuid module
-import json  # Import the json module
-import sys  # ADD THIS LINE
-
-print("Python Version:")  # ADD THIS LINE
-print(sys.version)  # ADD THIS LINE
 
 app = Flask(__name__)
+logging.info("Flask app initialized")  # ADDED LOGGING
 app.secret_key = secrets.token_hex(24)
 app.config['SESSION_TYPE'] = 'filesystem'
 
@@ -67,7 +65,6 @@ HTML_TEMPLATE_START = """<!DOCTYPE html>
             display: grid;
             grid-template-columns: 1fr 1fr 1fr; /* Three columns: Face 1, Face 2, Heatmap */
             gap: 5px;
-            align-items: center;  /* Center items vertically */
         }}
 
         .face-comparison-grid img {{
@@ -82,7 +79,6 @@ HTML_TEMPLATE_START = """<!DOCTYPE html>
             border: 1px solid #ddd; /* Subtle border */
             padding: 5px;
             margin-bottom: 5px; /* Add a bit of space between comparisons */
-            text-align: center;
         }}
         /* ADDED CSS */
 
@@ -136,7 +132,6 @@ HTML_TEMPLATE_START = """<!DOCTYPE html>
         .face-detection-container {{
             position: relative; /* Make the container relative */
             display: inline-block; /* Adjust to content */
-            text-align: center; /* Ensure content is centered */
         }}
 
         /* Style for the remove face button */
@@ -207,42 +202,14 @@ HTML_TEMPLATE_START = """<!DOCTYPE html>
             }})
             .catch(error => console.error('Error:', error));
         }}
-
-        function generateComparisonMatrix() {{
-            const formData = new FormData(document.getElementById('faceSelectionForm')); // Use the form to collect parameters
-            const params = new URLSearchParams(new FormData(document.getElementById('uploadForm'))).toString();
-
-            fetch('/generate_matrix?' + params, {{
-                method: 'POST',
-                 body: new FormData(document.getElementById('faceSelectionForm'))
-            }})
-            .then(response => response.text())
-            .then(comparisonMatrixHtml => {{
-                document.getElementById('comparison-matrix').innerHTML = comparisonMatrixHtml; // Render the comparison matrix
-            }})
-            .catch(error => console.error('Error:', error));
-        }}
-
-        function resetAnalysis() {{
-             fetch('/reset')
-            .then(response => {{
-                if (response.redirected) {{
-                    window.location.href = response.url; // Redirect to the upload page
-                }} else {{
-                    console.error('Redirection failed.');
-                }}
-            }})
-            .catch(error => console.error('Error:', error));
-        }}
-
     </script>
 </head>
 <body>
-    <h1 class="ai-title">ARTIFICIAL INTELLIGENCE - HAAR CASCADE CLASSIFIER - CELEBRITY FACIAL RECOGNITION - SEE WHO YOU LOOK LIKE! - LEARN AI IMAGE CLASSIFICATION TECHNIQUES!  </h1>
+    <h1 class="ai-title">Artificial Intelligence Facial Similarity Analyzer - Happy 13th Birthday Teddy!</h1>
 
     <div id="upload-area">
         <h2>Upload Images</h2>
-        <form id="uploadForm" method="POST" enctype="multipart/form-data" action="/">
+        <form method="POST" enctype="multipart/form-data" action="/" enctype="multipart/form-data">
             <label for="referenceImageInput">Reference Images (Rows):</label>
             <input type="file" id="referenceImageInput" name="referenceImage" multiple><br><br>
 
@@ -264,7 +231,7 @@ HTML_TEMPLATE_START = """<!DOCTYPE html>
                 <input type="number" id="similarityThreshold" name="similarityThreshold" value="{similarity_threshold}" step="0.01"><br><br>
             </div>
 
-            <button type="submit">Upload Images JPG/JPEG, PNG, WebP</button>
+            <button type="submit">Upload and Compare</button>
         </form>
     </div>
 
@@ -323,23 +290,7 @@ HTML_TEMPLATE_START = """<!DOCTYPE html>
         </ul>
         <p>Iteratively adjust these parameters and test on a variety of images to find the optimal settings for your specific use case.</p>
     </div>
-
-    <!-- Section for Displaying Images with Bounding Boxes and Checkboxes -->
-    <div id="face-selection-area">
-        <h2>Select Faces to Remove</h2>
-        <form id="faceSelectionForm" method="POST" enctype="multipart/form-data">
-        <!-- The images with bounding boxes and checkboxes will be inserted here -->
-        {face_selection_html}
-        <button type="button" onclick="generateComparisonMatrix()">Generate Comparison Matrix</button>
-        </form>
-    </div>
-
-    <div id="comparison-matrix">
-        <!-- The comparison matrix will be inserted here -->
-    </div>
-
-    <button type="button" onclick="resetAnalysis()">Start New Analysis</button>
-
+    <button type="button" onclick="removeSelectedFaces()">Remove Selected Faces</button>
 """
 
 HTML_TEMPLATE_END = """
@@ -389,27 +340,28 @@ def convert_image_to_base64(image):
     img_str = base64.b64encode(io_buf.read()).decode('utf-8')
     return img_str
 
+
 def draw_bounding_boxes(image, faces):
-    """Draws bounding boxes on an image with the (x, y) coordinates as the ID."""
-    for i, (x, y, w, h) in enumerate(faces):
+    """Draws bounding boxes on an image."""
+    for (x, y, w, h) in faces:
         cv2.rectangle(image, (x, y), (x + w, y + h), (0, 0, 255), 2)  # Red bounding box
-        # Add the (x, y) coordinates as the ID, positioning it above the box
-        cv2.putText(image, f"({x},{y})", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
     return image
 
 
-def create_heatmap_image(similarity_score, size=(100, 100), colormap=cv2.COLORMAP_INFERNO):
+def create_heatmap_image(similarity_score):
     """
     Generates a heatmap image based on the similarity score.
 
     Args:
         similarity_score (float): The similarity score between two faces (0 to 1).
-        size (tuple): The desired size (width, height) of the heatmap image.  Defaults to (100, 100).
-        colormap (int): The OpenCV colormap to use. Defaults to cv2.COLORMAP_INFERNO.
 
     Returns:
         str: Base64 encoded string of the heatmap image.
     """
+
+    # Define a colormap (e.g., from red to green)
+    # You can experiment with different colormaps (cv2.COLORMAP_JET, cv2.COLORMAP_VIRIDIS, etc.)
+    colormap = cv2.COLORMAP_JET
 
     # Convert the similarity score to a value between 0 and 255
     color_index = int(similarity_score * 255)
@@ -421,14 +373,10 @@ def create_heatmap_image(similarity_score, size=(100, 100), colormap=cv2.COLORMA
     # Apply the colormap
     heatmap_img = cv2.applyColorMap(heatmap_img, colormap)
 
-    # Resize the heatmap image
-    heatmap_img = cv2.resize(heatmap_img, size, interpolation=cv2.INTER_LINEAR)
-
     # Convert the heatmap image to base64
     heatmap_base64 = convert_image_to_base64(heatmap_img)
 
     return heatmap_base64
-
 
 
 def fix_image_orientation(image_path):  # Changed to accept image path
@@ -455,227 +403,136 @@ def fix_image_orientation(image_path):  # Changed to accept image path
         return None
 
 
-def create_face_selection_html(image_paths, scale_factor, min_neighbors, min_size, removed_faces):
-    """
-    Generates HTML for displaying images with detected faces and checkboxes.
-    """
-    html = '<h2>Face Selection</h2>'
-    for image_path in image_paths:
-        image = fix_image_orientation(image_path)
-        if image is None:
-            logging.error(f"Failed to load image: {image_path}")
-            continue
-
-        faces = detect_faces(image, scale_factor, min_neighbors, min_size)
-        image_with_boxes = draw_bounding_boxes(image.copy(), faces)
-        image_base64 = convert_image_to_base64(image_with_boxes)
-
-        html += f'<div><img src="data:image/jpeg;base64,{image_base64}" alt="Image with Bounding Boxes"/>'
-
-        # Add checkboxes for each detected face
-        for x, y, w, h in faces:
-            face_id = f'face_{os.path.basename(image_path)}_{x}_{y}_{w}_{h}'
-            html += f'<div class="face-detection-container">'
-            html += f'<input type="checkbox" id="remove_{face_id}" name="selected_faces" value="{face_id}" {"checked" if face_id in removed_faces else ""}>'
-            html += f'<label for="remove_{face_id}">Remove Face ({x},{y})</label>'
-            html += '</div>'
-        html += '</div>'
-
-    # Add the "Remove Selected Faces" button
-    html += '''
-        <button type="button" onclick="removeSelectedFaces()">Remove Selected Faces</button>
-    '''
-    return html
-
-import cv2
-import numpy as np
-import os
-from io import BytesIO
-import base64
-from PIL import Image
-import logging
-
-
-import cv2
-import numpy as np
-from io import BytesIO
-import base64
-
-
-def convert_image_to_base64(image):
-    """Converts a OpenCV image to base64 for embedding in HTML."""
-    _, buffer = cv2.imencode('.jpg', image)
-    io_buf = BytesIO(buffer)
-    img_str = base64.b64encode(io_buf.read()).decode('utf-8')
-    return img_str
-
-
-def create_custom_colormap(similarity_score, size=(500, 500)):
-    """
-    Generates a heatmap image with shades of blue,
-    where darker blues indicate higher similarity and lighter blues indicate lower similarity.
-
-    Args:
-        similarity_score (float): The similarity score between two faces (0 to 1).
-        size (tuple): The desired size (width, height) of the heatmap image. Defaults to (100, 100).
-
-    Returns:
-        str: Base64 encoded string of the heatmap image.
-    """
-
-    # Invert the similarity score so that 0 means "most similar" and 1 means "least similar"
-    inverted_score = 1 - similarity_score
-
-    # Convert the inverted score to a value between 0 and 255
-    color_index = int(inverted_score * 255)
-
-    # Create a 1x1 image with the color index
-    heatmap_img = np.zeros((1, 1, 3), dtype=np.uint8)  # 3 channels for BGR
-
-    # Shades of Blue Colormap
-    heatmap_img[0, 0, 0] = 255 - color_index  # Blue (decreases as color_index increases)
-    heatmap_img[0, 0, 1] = 255 - color_index  # Green (decreases as color_index increases)
-    heatmap_img[0, 0, 2] = 255 - color_index  # Red (decreases as color_index increases)
-
-    # Resize the heatmap image
-    heatmap_img = cv2.resize(heatmap_img, size, interpolation=cv2.INTER_LINEAR)
-
-    # Convert the heatmap image to base64
-    heatmap_base64 = convert_image_to_base64(heatmap_img)
-
-    return heatmap_base64
-
-
-def create_greyscale_difference_heatmap(face_image1, face_image2, target_size=(64, 64)):
-    """
-    Generates a heatmap image showing the pixel-wise difference between two greyscale face images.
-
-    Args:
-        face_image1 (numpy.ndarray): The first greyscale face image.
-        face_image2 (numpy.ndarray): The second greyscale face image.
-        target_size (tuple): The size to which both images will be resized before comparison.
-
-    Returns:
-        str: Base64 encoded string of the heatmap image.
-    """
-    try:
-        # Resize images to the same dimensions
-        resized_face1 = cv2.resize(face_image1, target_size)
-        resized_face2 = cv2.resize(face_image2, target_size)
-
-        # Calculate the absolute difference
-        difference = cv2.absdiff(resized_face1, resized_face2)
-
-        # Normalize the difference to the range 0-255
-        normalized_difference = cv2.normalize(difference, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
-
-        # Apply a colormap
-        heatmap = cv2.applyColorMap(normalized_difference, cv2.COLORMAP_INFERNO)
-
-        # Convert the heatmap to base64
-        heatmap_base64 = convert_image_to_base64(heatmap)
-        return heatmap_base64
-
-    except Exception as e:
-        print(f"Error creating greyscale difference heatmap: {e}")
-        return None
-
-
 def create_comparison_matrix(reference_image_paths, surveillance_image_paths, scale_factor, min_neighbors, min_size,
-                             similarity_threshold, removed_faces):
+                             similarity_threshold, removed_face_ids):
     """
-    Generates the HTML for the face comparison matrix, excluding removed faces.
+    Generates the HTML for the face comparison matrix.
     """
-    reference_faces_data = []
-    surveillance_faces_data = []
-    html = '<div id="comparison-matrix">'  # Start rendering the comparison matrix
-
-    # Define the target size for face crops
-    target_size = (128, 128)  # Example: 128x128 pixels
+    reference_images = []
+    surveillance_images = []
+    reference_face_locations = []  # Store face locations
+    surveillance_face_locations = []  # Store face locations
 
     # Load reference images and detect faces
+    reference_faces_data = []
     for image_path in reference_image_paths:
-        image = fix_image_orientation(image_path)
+        image = fix_image_orientation(image_path)  # Pass the image path
         if image is None:
             logging.error(f"Failed to load reference image: {image_path}")
             continue
-
-        # Detect faces in reference image
         faces = detect_faces(image, scale_factor, min_neighbors, min_size)
-        filtered_faces = [face for face in faces if
-                          f'face_{os.path.basename(image_path)}_{face[0]}_{face[1]}_{face[2]}_{face[3]}' not in removed_faces]
-        reference_faces_data.append({"filename": os.path.basename(image_path), "faces": filtered_faces, "image": image})
+        image_with_boxes = draw_bounding_boxes(image.copy(), faces)  # Draw bounding boxes
+        reference_images.append(image_with_boxes)
+        reference_faces_data.append({"filename": os.path.basename(image_path), "faces": faces})
+        reference_face_locations.append(faces)
 
     # Load surveillance images and detect faces
+    surveillance_faces_data = []
     for image_path in surveillance_image_paths:
-        image = fix_image_orientation(image_path)
+        image = fix_image_orientation(image_path)  # Pass the image path
         if image is None:
             logging.error(f"Failed to load surveillance image: {image_path}")
             continue
-
-        # Detect faces in surveillance image
         faces = detect_faces(image, scale_factor, min_neighbors, min_size)
-        filtered_faces = [face for face in faces if
-                          f'face_{os.path.basename(image_path)}_{face[0]}_{face[1]}_{face[2]}_{face[3]}' not in removed_faces]
-        surveillance_faces_data.append(
-            {"filename": os.path.basename(image_path), "faces": filtered_faces, "image": image})
+        image_with_boxes = draw_bounding_boxes(image.copy(), faces)  # Draw bounding boxes
+        surveillance_images.append(image_with_boxes)
+        surveillance_faces_data.append({"filename": os.path.basename(image_path), "faces": faces})
+        surveillance_face_locations.append(faces)
 
-    # Generate the comparison grid
-    for ref_data in reference_faces_data:
-        for ref_face in ref_data["faces"]:
-            ref_face_id = f'face_{ref_data["filename"]}_{ref_face[0]}_{ref_face[1]}_{ref_face[2]}_{ref_face[3]}'
+    # Build the HTML table
+    html = '<div id="comparison-matrix">'
+    html += '<div class="matrix-cell matrix-header"></div>'  # Empty top-left cell
 
-            # Skip this face if it's in the removed list
-            if ref_face_id in removed_faces:
-                continue
+    # Add surveillance image filenames as headers
+    for sur_idx, sur_data in enumerate(surveillance_faces_data):
+        filename = sur_data["filename"]
+        # Add original surveillance image with bounding boxes
+        html += f'<div class="matrix-cell matrix-header">'
+        html += f'<div class="original-image-container">'
+        sur_image = surveillance_images[sur_idx]
+        sur_image_base64 = convert_image_to_base64(sur_image)
+        html += f'<img src="data:image/jpeg;base64,{sur_image_base64}" alt="Original Surveillance Image with Bounding Boxes"/>'
+        html += f'<p>{filename}</p>'  # Filename below the image
+        html += f'</div>'  # Close original-image-container
+        html += f'</div>'  # Close matrix-cell matrix-header
 
-            ref_crop = crop_face(ref_data["image"], ref_face)
-            # Resize the reference face crop
-            ref_crop_resized = cv2.resize(ref_crop, target_size)
-            ref_gray = cv2.cvtColor(ref_crop_resized, cv2.COLOR_BGR2GRAY)  # Get grayscale image
-            ref_hist = calculate_histogram(ref_crop_resized)
+    # Iterate through reference images
+    for ref_idx, ref_data in enumerate(reference_faces_data):
+        ref_filename = ref_data["filename"]
+        ref_image = reference_images[ref_idx]
+        ref_faces = ref_data["faces"]
 
-            for sur_data in surveillance_faces_data:
-                for sur_face in sur_data["faces"]:
-                    sur_face_id = f'face_{sur_data["filename"]}_{sur_face[0]}_{sur_face[1]}_{sur_face[2]}_{sur_face[3]}'
+        # Add reference image filename as header
+        html += f'<div class="matrix-cell matrix-header">'
+        html += f'<div class="original-image-container">'
+        ref_image_base64 = convert_image_to_base64(ref_image)
+        html += f'<img src="data:image/jpeg;base64,{ref_image_base64}" alt="Original Reference Image with Bounding Boxes"/>'
+        html += f'<p>{ref_filename}</p>'  # Filename below the image
+        html += f'</div>'  # Close original image container
+        html += '</div>'  # Close matrix-cell matrix-header
 
-                    # Skip this face if it's in the removed list
-                    if sur_face_id in removed_faces:
+        # Iterate through surveillance images
+        for sur_idx, sur_data in enumerate(surveillance_faces_data):
+            sur_filename = sur_data["filename"]
+            sur_image = surveillance_images[sur_idx]
+            sur_faces = sur_data["faces"]
+
+            # Create a grid for face comparisons and heatmap
+            html += '<div class="matrix-cell">'
+            html += '<div class="face-comparison-grid">'
+
+            # Iterate through faces in the reference image
+            for ref_face_idx, ref_face in enumerate(ref_faces):
+                ref_face_id = f'ref_{ref_idx}_{ref_face_idx}'
+                ref_face_cropped = crop_face(ref_image, ref_face)
+                ref_hist = calculate_histogram(ref_face_cropped)
+                ref_face_base64 = convert_image_to_base64(ref_face_cropped)
+
+                # Iterate through faces in the surveillance image
+                for sur_face_idx, sur_face in enumerate(sur_faces):
+                    sur_face_id = f'sur_{sur_idx}_{sur_face_idx}'
+                    comparison_id = f'{ref_face_id}_vs_{sur_face_id}'
+
+                    # Check if this face comparison has been removed
+                    if comparison_id in removed_face_ids:
                         continue
 
-                    sur_crop = crop_face(sur_data["image"], sur_face)
-                    # Resize the surveillance face crop
-                    sur_crop_resized = cv2.resize(sur_crop, target_size)
-                    sur_gray = cv2.cvtColor(sur_crop_resized, cv2.COLOR_BGR2GRAY)  # Get grayscale image
-                    sur_hist = calculate_histogram(sur_crop_resized)
+                    sur_face_cropped = crop_face(sur_image, sur_face)
+                    sur_hist = calculate_histogram(sur_face_cropped)
+                    sur_face_base64 = convert_image_to_base64(sur_face_cropped)
 
-                    # Calculate similarity
                     similarity_score = compare_histograms(ref_hist, sur_hist)
+
+                    # Generate heatmap image
                     heatmap_base64 = create_heatmap_image(similarity_score)
-                    # Create greyscale difference heatmap
-                    difference_heatmap_base64 = create_greyscale_difference_heatmap(ref_gray, sur_gray)
 
-                    # Add the result to HTML
-                    html += f'<div class="matrix-cell">'
-                    html += f'<img src="data:image/jpeg;base64,{convert_image_to_base64(ref_crop_resized)}" alt="Reference Face"/>'
-                    html += f'<img src="data:image/jpeg;base64,{convert_image_to_base64(sur_crop_resized)}" alt="Surveillance Face"/>'
-                    html += f'<img src="data:image/jpeg;base64,{heatmap_base64}" alt="Similarity Heatmap"/>'
-                    if difference_heatmap_base64:
-                        html += f'<img src="data:image/jpeg;base64,{difference_heatmap_base64}" alt="Greyscale Difference Heatmap"/>'
-                    html += f'<p>Similarity: {similarity_score:.2f}</p>'
-                    html += '</div>'
+                    # Show only faces with similarity above the threshold
+                    if similarity_score >= similarity_threshold:
+                        # Create a unique identifier for the face detection container
+                        container_id = f"face-container-{ref_idx}-{ref_face_idx}-{sur_idx}-{sur_face_idx}"
 
-    html += '</div>'
+                        # Add face images and heatmap to the grid with the remove button
+                        html += f'<div id="{container_id}" class="face-detection-container">'
+                        html += f'<img src="data:image/jpeg;base64,{ref_face_base64}" alt="Reference Face"/>'
+                        html += f'<img src="data:image/jpeg;base64,{sur_face_base64}" alt="Surveillance Face"/>'
+                        html += f'<img src="data:image/jpeg;base64,{heatmap_base64}" alt="Heatmap"/>'  # Add heatmap
+                        html += f'<p>Similarity: {similarity_score:.2f}</p>'
+
+                        # Add a checkbox for removing the face
+                        face_id = f'ref_{ref_idx}_{ref_face_idx}_sur_{sur_idx}_{sur_face_idx}'
+                        html += f'<input type="checkbox" id="remove_{face_id}" name="selected_faces" value="{comparison_id}">'
+                        html += f'<label for="remove_{face_id}">Remove</label>'
+
+                        html += '</div>'
+            html += '</div>'  # Close face-comparison-grid
+            html += '</div>'  # Close matrix-cell
+    html += '</div>'  # Close comparison-matrix
     return html
-
 
 
 @app.route("/", methods=['GET', 'POST'])
 def upload_images():
-    # Reset removed_faces when new images are uploaded
-    session['removed_faces'] = []
-    session.modified = True
-
+    logging.info("Route / hit")  # ADDED LOGGING
     scale_factor = DEFAULT_SCALE_FACTOR
     min_neighbors = DEFAULT_MIN_NEIGHBORS
     min_size = DEFAULT_MIN_SIZE
@@ -723,11 +580,9 @@ def upload_images():
         session['min_size'] = min_size
         session['similarity_threshold'] = similarity_threshold
 
-        session.modified = True
-    else:
-        # Clear image paths on GET request
-        session.pop('reference_image_paths', None)
-        session.pop('surveillance_image_paths', None)
+        # Initialize or retrieve removed_face_ids from session
+        if 'removed_face_ids' not in session:
+            session['removed_face_ids'] = []
         session.modified = True
 
     # Retrieve image paths from session if available
@@ -739,91 +594,52 @@ def upload_images():
     min_size = session.get('min_size', DEFAULT_MIN_SIZE)
     similarity_threshold = session.get('similarity_threshold', DEFAULT_SIMILARITY_THRESHOLD)
 
-    removed_faces = session.get('removed_faces', [])
-
-    # Generate face selection HTML
-    all_image_paths = reference_image_paths + surveillance_image_paths
-    face_selection_html = create_face_selection_html(all_image_paths, scale_factor, min_neighbors, min_size, removed_faces)
+    removed_face_ids = session.get('removed_face_ids', [])
 
     comparison_matrix_html = ""
+    if reference_image_paths and surveillance_image_paths:
+        comparison_matrix_html = create_comparison_matrix(reference_image_paths, surveillance_image_paths,
+                                                          scale_factor,
+                                                          min_neighbors, min_size, similarity_threshold,
+                                                          removed_face_ids)
 
-    # Render the template with the face selection
+    # Render the template with the comparison matrix
     final_html = HTML_TEMPLATE_START.format(scale_factor=scale_factor, min_neighbors=min_neighbors,
                                             min_size=min_size,
-                                            similarity_threshold=similarity_threshold,
-                                            face_selection_html=face_selection_html) + comparison_matrix_html + HTML_TEMPLATE_END
+                                            similarity_threshold=similarity_threshold) + comparison_matrix_html + HTML_TEMPLATE_END
     return final_html
-
-
-@app.route('/generate_matrix', methods=['POST'])
-def generate_matrix():
-    """
-    Generates the comparison matrix after the user selects faces to remove.
-    """
-    scale_factor = float(request.args.get('scaleFactor'))
-    min_neighbors = int(request.args.get('minNeighbors'))
-    min_size = int(request.args.get('minSize'))
-    similarity_threshold = float(request.args.get('similarityThreshold'))
-
-    reference_image_paths = session.get('reference_image_paths', [])
-    surveillance_image_paths = session.get('surveillance_image_paths', [])
-    removed_faces = session.get('removed_faces', [])
-
-    comparison_matrix_html = create_comparison_matrix(reference_image_paths, surveillance_image_paths, scale_factor,
-                                                      min_neighbors, min_size, similarity_threshold, removed_faces)
-    return comparison_matrix_html
 
 
 @app.route('/remove_faces', methods=['POST'])
 def remove_faces():
-    """
-    Removes selected faces and regenerates the comparison matrix.
-    """
-    selected_face_ids_json = request.form.get('selected_face_ids')
-    selected_face_ids = json.loads(selected_face_ids_json) if selected_face_ids_json else []
-
+    logging.info("Route /remove_faces hit")  # ADDED LOGGING
+    """Handles the removal of selected faces from the comparison matrix."""
+    removed_face_ids = json.loads(request.form.get('selected_face_ids'))
     scale_factor = float(request.form.get('scaleFactor'))
     min_neighbors = int(request.form.get('minNeighbors'))
     min_size = int(request.form.get('minSize'))
     similarity_threshold = float(request.form.get('similarityThreshold'))
 
-    # Retrieve the current list of removed faces from the session
-    removed_faces = session.get('removed_faces', [])
-
-    # Add the newly selected faces to the list
-    for face_id in selected_face_ids:
-        if face_id not in removed_faces:
-            removed_faces.append(face_id)
-
-    # Store the updated list of removed faces in the session
-    session['removed_faces'] = removed_faces
-    session.modified = True
-
-    # Retrieve image paths from session
+    # Get image paths from session
     reference_image_paths = session.get('reference_image_paths', [])
     surveillance_image_paths = session.get('surveillance_image_paths', [])
 
-    # Regenerate face selection HTML with updated removed faces
-    all_image_paths = reference_image_paths + surveillance_image_paths
-    face_selection_html = create_face_selection_html(all_image_paths, scale_factor, min_neighbors, min_size,
-                                                     removed_faces)
+    # Update the session with the removed face IDs
+    if 'removed_face_ids' not in session:
+        session['removed_face_ids'] = []
+    session['removed_face_ids'].extend(removed_face_ids)
+    session.modified = True
 
-    # Regenerate the comparison matrix with the removed faces
-    comparison_matrix_html = create_comparison_matrix(reference_image_paths, surveillance_image_paths, scale_factor,
-                                                      min_neighbors, min_size, similarity_threshold, removed_faces)
+    # Regenerate the comparison matrix HTML
+    comparison_matrix_html = create_comparison_matrix(reference_image_paths, surveillance_image_paths,
+                                                      scale_factor,
+                                                      min_neighbors, min_size, similarity_threshold,
+                                                      session['removed_face_ids'])
 
-    # Return the updated HTML content for the comparison matrix and face selection area
+    # Return only the updated comparison matrix HTML
     return comparison_matrix_html
 
 
-
-@app.route('/reset')
-def reset():
-    """Resets the session and redirects to the upload page."""
-    session.clear()  # Clear all session data
-    return redirect(url_for('upload_images'))  # Redirect to the upload page
-
-
-if __name__ == '__main__':
-
+if __name__ == "__main__":
+    logging.info("App starting in debug mode")  # ADDED LOGGING
     app.run(debug=True)
