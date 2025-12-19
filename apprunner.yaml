@@ -1,7 +1,7 @@
 version: 1.0
 service:
   name: facial-recognition-game-haar-classifier
-  runtime: python3.10 # or another supported version
+  runtime: python3.10
   source:
     type: codeRepository
     configuration:
@@ -12,12 +12,15 @@ service:
     commands:
       - pip install -r requirements.txt
   run:
-    command: gunicorn --bind :$PORT --workers 3 AppV27AccuracyAndRemovalFalsePositivesV6:app
+    command: gunicorn --bind 0.0.0.0:$PORT --workers 3 AppV27AccuracyAndRemovalFalsePositivesV6:app
     port: 5000
   healthCheck:
-    path: / # Or a specific health check endpoint like /health
+    path: /
+    protocol: HTTP
     interval: 5
     timeout: 5
     healthyThreshold: 2
     unhealthyThreshold: 5
+
+
 
