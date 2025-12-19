@@ -12,7 +12,7 @@ service:
     commands:
       - "pip install -r requirements.txt"
   run:
-    command: "python AppV27AccuracyAndRemovalFalsePositivesV6.py"
+    command: "gunicorn --bind 0.0.0.0:5000 AppV27AccuracyAndRemovalFalsePositivesV6:app"
     port: 5000
   healthCheck:
     path: "/"
@@ -20,6 +20,7 @@ service:
     timeout: 5
     healthyThreshold: 2
     unhealthyThreshold: 5
+
 
 
 
