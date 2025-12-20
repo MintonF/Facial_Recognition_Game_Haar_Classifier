@@ -9,9 +9,10 @@ RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-EXPOSE 8080
+EXPOSE 5000
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "AppV27AccuracyAndRemovalFalsePositivesV6:app"]
-]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "AppV27AccuracyAndRemovalFalsePositivesV6:app"]
+
+
 
 
