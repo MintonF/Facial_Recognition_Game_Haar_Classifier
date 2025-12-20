@@ -1,0 +1,21 @@
+version: 1.0
+serviceName: FacialRecognitionGame
+sourceConfiguration:
+  codeRepository:
+    repositoryUrl: https://github.com/MintonF/Facial_Recognition_Game_Haar_Classifier
+    sourceBranch: main
+    build:
+      image: "python:3.9-slim-buster"
+      commands:
+        - pip install -r requirements.txt  # If you have dependencies
+        - pip install Flask opencv-python Pillow
+        - gunicorn --bind :8080 AppV27AccuracyAndRemovalFalsePositivesV10Rev6:app
+instanceConfiguration:
+  cpu: "1"
+  memory: "2"
+healthCheckConfiguration:
+  protocol: HTTP
+  path: /
+
+
+
