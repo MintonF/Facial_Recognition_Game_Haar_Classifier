@@ -1,12 +1,27 @@
 version: "1.0"
 service:
   name: "facial-recognition-game-haar-classifier"
-  runtime: python3.9 # Or the correct, supported runtime
+  runtime: python3.9
   build:
     dockerfile: Dockerfile
   ports:
     - protocol: tcp
       port: 5000
+  health-check:
+    path: / # Or your health check endpoint.  A simple "/" often works.
+    protocol: tcp
+    port: 5000
+    interval: 5
+    timeout: 2
+    healthy-threshold: 2
+    unhealthy-threshold: 5
+  cpu: "1024"  # 1 vCPU
+  memory: "2048" # 2 GB
+  auto-scaling:
+    min-instances: 1
+    max-instances: 3
+
+
 
 
 
